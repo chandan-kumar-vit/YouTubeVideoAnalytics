@@ -1,0 +1,928 @@
+---
+title: "Review3 - Analysis of Youtube Trending Videos"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+### Reg. No: 18BCE1020
+
+### Name: Chandan Kumar
+
+# Problem Statement and Objectives
+
+
+### What problem are you trying to solve?
+
+
+I have curiosity in knowing the psychology behind a viewer who attracted them towards a particular video. 
+This knowledge of psychology can be used to get a trending video in minimum time frame as well as we can get a highly watched and liked video.
+
+
+### What data have you chosen?(Chosen Dataset, Source of dataset, Description of dataset, basic commands to describe dataset)
+
+For this research I have used open dataset which is available on kaggle. The link for the dataset is https://www.kaggle.com/datasnaek/youtube-new I am using the latest version of this dataset.
+
+YouTube (the world-famous video sharing website) maintains a list of the top trending videos on the platform. According to Variety magazine, “To determine the year’s top-trending videos, YouTube uses a combination of factors including measuring users interactions (number of views, shares, comments and likes).
+
+This dataset is a daily record of the top trending YouTube videos. 
+
+Basically, this dataset contains 20 files in csv and json format. All these files correspond to a particular country. After summing of the number of rows, it has more than 2.6 lakhs entries. Moreover if we talk about the number of columns it has 16 cols. in total. It has id's associated with each video and data associated with it.
+Data includes the video title, channel title, publish time, tags, views, likes and dislikes, description, and comment count.
+
+Below is a sample of my dataset(used only one file)
+```{r}
+data=read.csv("CAvideos.csv")
+dim(data)
+str(data)
+colnames(data)
+```
+
+
+### Objectives
+
+1. Psychological analysis of each region
+
+2. Relation in psychology in in different regions.
+
+3. Designing algorithms choosing the video to recommended next to a particular video on the basis of above psychological analysis.
+
+4. Using some algorithms generating a comment.
+
+5. Factors effecting the hit of video on YouTube.
+
+6. Using existing models in R, predicting results.
+
+7. Data Visualisation.
+
+### Is there any work previously reported on the problem and the data? If so, discuss it here.
+
+Everyday the data of YouTube is getting refreshed and the mindset of people is also getting changed. This dataset is an ongoing project of YouTube also. The research done by the YouTube Team does not gets published. 
+Although, youtube have a reccomendation system but they are also trying to develop better algorithm than the prevoius one.
+
+# Analysis of data
+
+## Setup
+
+### Libraries
+```{r}
+options(warn=-1)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(ggpubr)
+library(scales)
+library(caTools)
+library(GGally)
+library(e1071)
+library(class)
+library(tidyr)
+```
+
+## Analysis of Indian Videos
+
+### Dataset
+```{r}
+ind_data=read.csv("INvideos.csv")
+
+```
+
+### Data Cleaning and Preprocessing
+```{r}
+sum(is.na(ind_data))
+pub_time=substr(ind_data$publish_time,12,19)
+ind_data=cbind(ind_data,pub_time)
+str(ind_data$trending_date)
+```
+
+We need to change the format of date from character.
+
+```{r}
+temp=rep("20",times=nrow(ind_data))
+ind_data$trending_date=paste(temp,ind_data$trending_date,sep = "")
+ind_data$trending_date=gsub("[.]","-",ind_data$trending_date)
+ind_data$trending_date=as.POSIXct(ind_data$trending_date,format="%Y-%d-%m")
+
+```
+
+```{r}
+ind_data$publish_time=substr(ind_data$publish_time,1,nchar(ind_data$publish_time)-14)
+ind_data$publish_time=as.POSIXct(ind_data$publish_time)
+str(ind_data$publish_time)
+```
+
+### Getting the day of the published videos
+
+```{r}
+day_pub=wday(ind_data$publish_time,label = TRUE)
+ind_data=cbind(ind_data,day_pub)
+ind_data$day_pub=as.character(ind_data$day_pub)
+```
+
+### Number of Days required to come in the trending section
+```{r}
+dur_to_trend=difftime(ind_data$trending_date,ind_data$publish_time,units = "days")
+ind_data=cbind(ind_data,dur_to_trend)
+```
+
+### Converting category_id to factor and mapping it to the respective category names
+```{r}
+str(ind_data$category_id)
+temp=unique(ind_data$category_id)
+idx=1
+temp=rep("",times=nrow(ind_data))
+for(i in ind_data$category_id){
+  if(i==1){
+    temp[idx]="Film and animation"
+    idx=idx+1
+  }
+  else if(i==2){
+    temp[idx]="Autos & Vehicles"
+    idx=idx+1
+  }
+  else if(i==10){
+    temp[idx]="Music"
+    idx=idx+1
+  }
+  else if(i==15){
+    temp[idx]="Pets & Animals"
+    idx=idx+1
+  }
+  else if(i==17){
+    temp[idx]="Sports"
+    idx=idx+1
+  }
+  else if(i==19){
+    temp[idx]="Travel & Events"
+    idx=idx+1
+  }
+  else if(i==20){
+    temp[idx]="Gaming"
+    idx=idx+1
+  }
+  else if(i==22){
+    temp[idx]="People and Blogs"
+    idx=idx+1
+  }
+  else if(i==23){
+    temp[idx]="Comedy"
+    idx=idx+1
+  }
+  else if(i==24){
+    temp[idx]="Entertainment"
+    idx=idx+1
+  }
+  else if(i==25){
+    temp[idx]="News&Policies"
+    idx=idx+1
+  }
+  else if(i==26){
+    temp[idx]="Howto & Style"
+    idx=idx+1
+  }
+  else if(i==27){
+    temp[idx]="Education"
+    idx=idx+1
+  }
+  else if(i==28){
+    temp[idx]="Science&Tech"
+    idx=idx+1
+  }
+  else if(i==29){
+    temp[idx]="Nonprofits & Activism"
+    idx=idx+1
+  }
+}
+ind_data=cbind(ind_data,temp)
+```
+
+## Analytics and Data Visualisation
+
+### Analysis of Period between video uploaded and getting on trending section
+```{r}
+df=ind_data%>%
+  group_by(dur_to_trend)%>%
+  summarise(no_of_videos=n())
+df=df[1:10,]
+ggplot(data=df,aes(x=dur_to_trend,y=no_of_videos))+geom_bar(stat = "identity",width=0.5,fill="red")+labs(title = "No of Days in which a video gets trending", y="No of Videos", x= "Duration(in Days)")
+```
+
+### Analysis of Views on trending videos 
+```{r}
+ggplot(data =ind_data, aes(views))+geom_histogram(color="orange",fill="orange", bins = 500 )
+```
+
+### Analysis of Likes
+```{r}
+ggplot(data =ind_data, aes(likes))+geom_histogram(color="green",fill="green",bins=1000)
+```
+
+### Analysis of Category
+```{r}
+df=ind_data%>%
+  group_by(temp)%>%
+  summarise(no_of_videos=n())
+ggplot(data=df,aes(x=temp,y=no_of_videos,fill=temp))+geom_bar(stat = "identity",width = 0.5)+coord_flip()
+
+idx=which.min(df$no_of_videos)
+df[idx,]
+```
+
+#### In India people are fond of watching Videos belonging to Entertainment genre. They also like to watch blogs, news and comedy.
+
+#### And they videos belonging to pets and animals, gaming and travel seems to have less creativity.
+
+### Analysis of Channels
+```{r}
+df=ind_data%>%
+  group_by(channel_title)%>%
+  summarise(no_of_videos=n())
+df$no_of_videos=sort(df$no_of_videos,decreasing = TRUE)
+df[1:20,]
+```
+
+Above are the top chennals which comes in trending section.
+
+```{r}
+df=ind_data%>%
+  group_by(channel_title,temp)%>%
+  summarise(no_of_videos=n())
+df$no_of_videos=sort(df$no_of_videos,decreasing = TRUE)
+df[1:20,]
+```
+
+These are genre of the videos made by our top trending videos.
+
+```{r}
+df=df[1:100,]
+df=df%>%
+  group_by(temp)%>%
+  summarise(total_video=sum(no_of_videos))
+df
+ggplot(data=df,aes(x=temp,y=total_video,fill=temp))+geom_bar(stat = "identity",width = 0.5)+coord_flip()
+
+```
+
+
+
+### Analysis on Day of Publication
+```{r}
+freq=table(ind_data$day_pub)
+day=c("sun","mon","tue","wed","thurs","fri","sat")
+df=data.frame(day,freq)
+ggplot(data=df,aes(x=day,y=freq,fill=day))+geom_bar(stat = "identity",width = 0.5)
+```
+
+#### It seems if you upload your video on any day it does not affect much on that.But the max peak is achieved by the video which are uploaded on sunday.
+
+### Analysis on Time of Publication
+```{r}
+ind_data$pub_time=as.POSIXct(ind_data$pub_time,format="%H:%M:%S")
+ggplot(data =ind_data, aes(pub_time))+geom_histogram(aes(y=..density..),color="orange",fill="orange")+geom_vline(aes(xintercept=mean(pub_time)),color="blue",linetype="dashed",size=1)+geom_density(alpha=.2,fill="green")
+
+
+```
+
+#### The best time to upload the videos is between 12 noon to 6 in the evening.
+
+## Comaprison with other regions
+
+
+### Reading data of diff regions
+```{r}
+gb_data=read.csv("GBvideos.csv")
+us_data=read.csv("USvideos.csv")
+jp_data=read.csv("JPvideos.csv")
+
+```
+
+### Data Preprocessing and Data Cleaning for GB Dataset
+
+```{r}
+pub_time=substr(gb_data$publish_time,12,19)
+gb_data=cbind(gb_data,pub_time)
+
+temp=rep("20",times=nrow(gb_data))
+gb_data$trending_date=paste(temp,gb_data$trending_date,sep = "")
+gb_data$trending_date=gsub("[.]","-",gb_data$trending_date)
+gb_data$trending_date=as.POSIXct(gb_data$trending_date,format="%Y-%d-%m")
+
+day_pub=wday(gb_data$publish_time,label = TRUE)
+gb_data=cbind(gb_data,day_pub)
+gb_data$day_pub=as.character(gb_data$day_pub)
+
+dur_to_trend=difftime(gb_data$trending_date,gb_data$publish_time,units = "days")
+gb_data=cbind(gb_data,dur_to_trend)
+
+temp=unique(gb_data$category_id)
+idx=1
+temp=rep("",times=nrow(gb_data))
+for(i in gb_data$category_id){
+  if(i==1){
+    temp[idx]="Film and animation"
+    idx=idx+1
+  }
+  else if(i==2){
+    temp[idx]="Autos & Vehicles"
+    idx=idx+1
+  }
+  else if(i==10){
+    temp[idx]="Music"
+    idx=idx+1
+  }
+  else if(i==15){
+    temp[idx]="Pets & Animals"
+    idx=idx+1
+  }
+  else if(i==17){
+    temp[idx]="Sports"
+    idx=idx+1
+  }
+  else if(i==19){
+    temp[idx]="Travel & Events"
+    idx=idx+1
+  }
+  else if(i==20){
+    temp[idx]="Gaming"
+    idx=idx+1
+  }
+  else if(i==22){
+    temp[idx]="People and Blogs"
+    idx=idx+1
+  }
+  else if(i==23){
+    temp[idx]="Comedy"
+    idx=idx+1
+  }
+  else if(i==24){
+    temp[idx]="Entertainment"
+    idx=idx+1
+  }
+  else if(i==25){
+    temp[idx]="News&Policies"
+    idx=idx+1
+  }
+  else if(i==26){
+    temp[idx]="Howto & Style"
+    idx=idx+1
+  }
+  else if(i==27){
+    temp[idx]="Education"
+    idx=idx+1
+  }
+  else if(i==28){
+    temp[idx]="Science&Tech"
+    idx=idx+1
+  }
+  else if(i==29){
+    temp[idx]="Nonprofits & Activism"
+    idx=idx+1
+  }
+}
+gb_data=cbind(gb_data,temp)
+```
+
+### Data Preprocessing and Data Cleaning for US Dataset
+
+```{r}
+pub_time=substr(us_data$publish_time,12,19)
+us_data=cbind(us_data,pub_time)
+
+temp=rep("20",times=nrow(us_data))
+us_data$trending_date=paste(temp,us_data$trending_date,sep = "")
+us_data$trending_date=gsub("[.]","-",us_data$trending_date)
+us_data$trending_date=as.POSIXct(us_data$trending_date,format="%Y-%d-%m")
+
+day_pub=wday(us_data$publish_time,label = TRUE)
+us_data=cbind(us_data,day_pub)
+us_data$day_pub=as.character(us_data$day_pub)
+
+dur_to_trend=difftime(us_data$trending_date,us_data$publish_time,units = "days")
+us_data=cbind(us_data,dur_to_trend)
+
+temp=unique(us_data$category_id)
+idx=1
+temp=rep("",times=nrow(us_data))
+for(i in us_data$category_id){
+  if(i==1){
+    temp[idx]="Film and animation"
+    idx=idx+1
+  }
+  else if(i==2){
+    temp[idx]="Autos & Vehicles"
+    idx=idx+1
+  }
+  else if(i==10){
+    temp[idx]="Music"
+    idx=idx+1
+  }
+  else if(i==15){
+    temp[idx]="Pets & Animals"
+    idx=idx+1
+  }
+  else if(i==17){
+    temp[idx]="Sports"
+    idx=idx+1
+  }
+  else if(i==19){
+    temp[idx]="Travel & Events"
+    idx=idx+1
+  }
+  else if(i==20){
+    temp[idx]="Gaming"
+    idx=idx+1
+  }
+  else if(i==22){
+    temp[idx]="People and Blogs"
+    idx=idx+1
+  }
+  else if(i==23){
+    temp[idx]="Comedy"
+    idx=idx+1
+  }
+  else if(i==24){
+    temp[idx]="Entertainment"
+    idx=idx+1
+  }
+  else if(i==25){
+    temp[idx]="News&Policies"
+    idx=idx+1
+  }
+  else if(i==26){
+    temp[idx]="Howto & Style"
+    idx=idx+1
+  }
+  else if(i==27){
+    temp[idx]="Education"
+    idx=idx+1
+  }
+  else if(i==28){
+    temp[idx]="Science&Tech"
+    idx=idx+1
+  }
+  else if(i==29){
+    temp[idx]="Nonprofits & Activism"
+    idx=idx+1
+  }
+}
+us_data=cbind(us_data,temp)
+```
+
+### Data Preprocessing and Data Cleaning for JP Dataset
+
+```{r}
+pub_time=substr(jp_data$publish_time,12,19)
+jp_data=cbind(jp_data,pub_time)
+
+temp=rep("20",times=nrow(jp_data))
+jp_data$trending_date=paste(temp,jp_data$trending_date,sep = "")
+jp_data$trending_date=gsub("[.]","-",jp_data$trending_date)
+jp_data$trending_date=as.POSIXct(jp_data$trending_date,format="%Y-%d-%m")
+
+day_pub=wday(jp_data$publish_time,label = TRUE)
+jp_data=cbind(jp_data,day_pub)
+jp_data$day_pub=as.character(jp_data$day_pub)
+
+dur_to_trend=difftime(jp_data$trending_date,jp_data$publish_time,units = "days")
+jp_data=cbind(jp_data,dur_to_trend)
+
+temp=unique(jp_data$category_id)
+idx=1
+temp=rep("",times=nrow(jp_data))
+for(i in jp_data$category_id){
+  if(i==1){
+    temp[idx]="Film and animation"
+    idx=idx+1
+  }
+  else if(i==2){
+    temp[idx]="Autos & Vehicles"
+    idx=idx+1
+  }
+  else if(i==10){
+    temp[idx]="Music"
+    idx=idx+1
+  }
+  else if(i==15){
+    temp[idx]="Pets & Animals"
+    idx=idx+1
+  }
+  else if(i==17){
+    temp[idx]="Sports"
+    idx=idx+1
+  }
+  else if(i==19){
+    temp[idx]="Travel & Events"
+    idx=idx+1
+  }
+  else if(i==20){
+    temp[idx]="Gaming"
+    idx=idx+1
+  }
+  else if(i==22){
+    temp[idx]="People and Blogs"
+    idx=idx+1
+  }
+  else if(i==23){
+    temp[idx]="Comedy"
+    idx=idx+1
+  }
+  else if(i==24){
+    temp[idx]="Entertainment"
+    idx=idx+1
+  }
+  else if(i==25){
+    temp[idx]="News&Policies"
+    idx=idx+1
+  }
+  else if(i==26){
+    temp[idx]="Howto & Style"
+    idx=idx+1
+  }
+  else if(i==27){
+    temp[idx]="Education"
+    idx=idx+1
+  }
+  else if(i==28){
+    temp[idx]="Science&Tech"
+    idx=idx+1
+  }
+  else if(i==29){
+    temp[idx]="Nonprofits & Activism"
+    idx=idx+1
+  }
+}
+jp_data=cbind(jp_data,temp)
+```
+
+
+### Total number of videos
+```{r}
+reg=c("ind","gb","us","jp")
+qty=c(nrow(ind_data),nrow(gb_data), nrow(us_data),nrow(jp_data))
+df=data.frame(reg,qty)
+
+ggplot(df,aes(x="",y=qty,fill=reg))+geom_bar(width=1, stat="identity")+coord_polar("y",start = 0)+scale_fill_brewer("blues")
+```
+
+
+### Comparison on the basis of Views
+
+```{r}
+p1=ggplot(data =ind_data, aes(views))+geom_histogram(color="orange",fill="orange", bins = 1000)
+p2=ggplot(data =gb_data, aes(views))+geom_histogram(color="blue",fill="blue", bins = 900)
+p3=ggplot(data =us_data, aes(views))+geom_histogram(color="red",fill="red", bins = 900)
+p4=ggplot(data =jp_data, aes(views))+geom_histogram(color="green",fill="green", bins = 900)
+ggarrange(p1,p2,p3,p4,labels=c("ind","gb","us","jp"), ncol=2,nrow=2)
+```
+
+
+### Analysis of Period between video uploaded and getting on trending section
+
+```{r}
+df=ind_data%>%
+  group_by(dur_to_trend)%>%
+  summarise(no_of_videos=n())
+df=df[1:10,]
+p1=ggplot(data=df,aes(x=dur_to_trend,y=no_of_videos))+geom_bar(stat = "identity",width=0.5,fill="red")+labs(y="No of Videos", x= "Duration(in Days)")
+
+df=gb_data%>%
+  group_by(dur_to_trend)%>%
+  summarise(no_of_videos=n())
+df=df[1:10,]
+p2=ggplot(data=df,aes(x=dur_to_trend,y=no_of_videos))+geom_bar(stat = "identity",width=0.5,fill="blue")+labs(y="No of Videos", x= "Duration(in Days)")
+
+df=us_data%>%
+  group_by(dur_to_trend)%>%
+  summarise(no_of_videos=n())
+df=df[1:10,]
+p3=ggplot(data=df,aes(x=dur_to_trend,y=no_of_videos))+geom_bar(stat = "identity",width=0.5,fill="green")+labs(y="No of Videos", x= "Duration(in Days)")
+
+df=jp_data%>%
+  group_by(dur_to_trend)%>%
+  summarise(no_of_videos=n())
+df=df[1:10,]
+p4=ggplot(data=df,aes(x=dur_to_trend,y=no_of_videos))+geom_bar(stat = "identity",width=0.5,fill="chocolate")+labs(y="No of Videos", x= "Duration(in Days)")
+
+ggarrange(p1,p2,p3,p4,labels=c("ind","gb","us","jp"), ncol=2,nrow=2)
+```
+
+#### So, it can be seen that in India and Japan it takes less than 2 days to get the videos in the trending list, where as in US and UK videos may take more than a week to be on the trending list.
+
+
+### Category Trending Comaprison
+
+```{r}
+df=ind_data%>%
+  group_by(temp)%>%
+  summarise(no_of_videos=n())
+p1=ggplot(data=df,aes(x=temp,y=no_of_videos))+geom_bar(stat = "identity",width = 0.5, fill="orange")+coord_flip()
+
+df=gb_data%>%
+  group_by(temp)%>%
+  summarise(no_of_videos=n())
+p2=ggplot(data=df,aes(x=temp,y=no_of_videos))+geom_bar(stat = "identity",width = 0.5,fill="blue")+coord_flip()
+
+
+df=us_data%>%
+  group_by(temp)%>%
+  summarise(no_of_videos=n())
+p3=ggplot(data=df,aes(x=temp,y=no_of_videos))+geom_bar(stat = "identity",width = 0.5, fill="red")+coord_flip()
+
+
+df=jp_data%>%
+  group_by(temp)%>%
+  summarise(no_of_videos=n())
+p4=ggplot(data=df,aes(x=temp,y=no_of_videos))+geom_bar(stat = "identity",width = 0.5,fill="green")+coord_flip()
+
+ggarrange(p1,p2,p3,p4,labels=c("ind","gb","us","jp"), ncol=2,nrow=2)
+```
+
+#### All regions except UK we can see that entertainment genre has got on the trending list most number of times but in UK, videos belonging  to Music genre got the most number of videos in the trending list.
+
+### Comaprison on day of publication
+
+```{r}
+freq1=table(ind_data$day_pub)
+day=c("sun","mon","tue","wed","thurs","fri","sat")
+df1=data.frame(day,freq1)
+p1=ggplot(data=df1,aes(x=day,y=freq1))+geom_bar(stat = "identity",width = 0.5,fill="orange")
+
+freq2=table(gb_data$day_pub)
+df2=data.frame(day,freq2)
+p2=ggplot(data=df2,aes(x=day,y=freq2))+geom_bar(stat = "identity",width = 0.5,fill="blue")
+
+freq3=table(us_data$day_pub)
+df3=data.frame(day,freq3)
+p3=ggplot(data=df3,aes(x=day,y=freq3))+geom_bar(stat = "identity",width = 0.5,fill="red")
+
+freq4=table(jp_data$day_pub)
+df4=data.frame(day,freq4)
+p4=ggplot(data=df4,aes(x=day,y=freq4))+geom_bar(stat = "identity",width = 0.5,fill="green")
+ggarrange(p1,p2,p3,p4,labels=c("ind","gb","us","jp"), ncol=2,nrow=2)
+```
+
+#### In UK and US videos uploaded on tue and wed are less probable to get on the trending list, but in India and Japan videos uploaded on tue and wed have chances to get on trending section, moreover in japan videos uploaded on wed have the most chance to be on the trending list.
+
+### Comaprison of Time of publish
+
+```{r}
+ind_data$pub_time=as.POSIXct(ind_data$pub_time,format="%H:%M:%S")
+p1=ggplot(data =ind_data, aes(pub_time))+geom_histogram(aes(y=..density..),color="orange",fill="orange")+geom_vline(aes(xintercept=mean(pub_time)),color="blue",linetype="dashed",size=1)+geom_density(alpha=.2,fill="orange")
+
+gb_data$pub_time=as.POSIXct(gb_data$pub_time,format="%H:%M:%S")
+p2=ggplot(data =gb_data, aes(pub_time))+geom_histogram(aes(y=..density..),color="blue",fill="blue")+geom_vline(aes(xintercept=mean(pub_time)),color="red",linetype="dashed",size=1)+geom_density(alpha=.2,fill="blue")
+
+us_data$pub_time=as.POSIXct(us_data$pub_time,format="%H:%M:%S")
+p3=ggplot(data =us_data, aes(pub_time))+geom_histogram(aes(y=..density..),color="red",fill="red")+geom_vline(aes(xintercept=mean(pub_time)),color="blue",linetype="dashed",size=1)+geom_density(alpha=.2,fill="red")
+
+jp_data$pub_time=as.POSIXct(jp_data$pub_time,format="%H:%M:%S")
+p4=ggplot(data =jp_data, aes(pub_time))+geom_histogram(aes(y=..density..),color="green",fill="green")+geom_vline(aes(xintercept=mean(pub_time)),color="blue",linetype="dashed",size=1)+geom_density(alpha=.2,fill="green")
+
+ggarrange(p1,p2,p3,p4,labels=c("ind","gb","us","jp"), ncol=2,nrow=2)
+```
+
+
+### Correlation Matrix
+
+```{r}
+ggcorr(data,label=TRUE,label_alpha = TRUE)
+```
+
+
+### Plotting the graphs between variables to get a visualization of correlation 
+
+```{r}
+ggplot()+geom_point(aes(x = ind_data$likes, y = ind_data$views),colour = 'red')
+
+ggplot()+geom_point(aes(x = ind_data$dislikes, y = ind_data$views),colour = 'blue')
+
+ggplot()+geom_point(aes(x = ind_data$comment_count, y = ind_data$views),colour = 'green')
+```
+
+
+## Predicting Views
+
+### Using Multiple Linear Regression
+
+```{r}
+
+dataset=ind_data[,c(8,9)]
+
+regressor = lm(formula = views ~ likes, data = dataset)
+
+y_pred = predict(regressor, data.frame(likes = 10000))
+y_pred
+
+ggplot() + geom_point(aes(x = dataset$likes, y = dataset$views),colour = 'red') + geom_line(aes(x=dataset$likes, y = predict(regressor, newdata = dataset)),colour = 'blue') + ggtitle('Prediction (Linear Regression)') + xlab('likes') + ylab('views')
+
+
+```
+
+
+### Using Support Vector Regression
+
+```{r}
+dataset = ind_data
+
+regressor = svm(formula = views ~ likes,
+                data = dataset,
+                type = 'eps-regression',
+                kernel = 'radial')
+
+y_pred = predict(regressor, data.frame(likes = 10000))
+y_pred
+
+ggplot() +
+  geom_point(aes(x = dataset$likes, y = dataset$views),
+             colour = 'red') +
+  geom_line(aes(x = dataset$likes, y = predict(regressor, newdata = dataset)),
+            colour = 'blue') +
+  ggtitle('Prediction (SVR)') +
+  xlab('likes') +
+  ylab('views')
+
+```
+
+
+### Using Polynomial Regression
+
+```{r}
+dataset=ind_data[,c(8,9)]
+
+likes2 = dataset$likes^2
+likes3 = dataset$likes^3
+likes4 = dataset$likes^4
+likes5 = dataset$likes^5
+likes6 = dataset$likes^6
+
+dataset=cbind(dataset,likes2,likes3,likes4,likes5)
+
+poly_reg = lm(formula = views ~ .,
+              data = dataset)
+
+ggplot() + geom_point(aes(x = dataset$likes, y = dataset$views),
+             colour = 'red') +
+  geom_line(aes(x = dataset$likes, y = predict(poly_reg, newdata = dataset)),
+            colour = 'blue') +
+  ggtitle('Prediction (Polynomial Regression)') +
+  xlab('likes') +
+  ylab('views')
+
+```
+
+
+
+## Reccomendation of video
+
+
+#### There are 4 parameters to suggest a video: channel name, category and tags.
+#### I have prioritised the reccomendations as channel name > category > tags
+
+
+### Chennel Name
+
+```{r}
+recm= ind_data%>%
+  filter(channel_title=="20th Century Fox")%>%
+  select(video_id)
+head(recm)
+```
+
+### Category
+
+```{r}
+recm= ind_data%>%
+  filter(category_id==24)%>%
+  select(video_id)
+
+head(recm)
+```
+
+
+### Separating tags
+
+
+```{r}
+
+temp=ind_data$tags
+tags=strsplit(temp,'"',fixed = TRUE)
+
+head(tags)
+```
+
+### Finding Video of corresponding tags
+
+```{r}
+text="MCA"
+idx=c()
+
+for (i in c(1 : 10000)) 
+{
+    for (j in c(1: length(tags[[i]]))) 
+    {
+        if(text==tags[[i]][[j]]){
+            idx=append(idx,i)  
+        }
+    } 
+}
+
+for(i in c(1:length(idx)))
+{
+  print(ind_data[i,1])
+}
+```
+
+
+## Comments Prediction:
+
+```{r}
+cmnts=read.csv("UScomments.csv", skipNul = TRUE)
+
+head(cmnts)
+```
+
+
+### Predicting whether the cmnt is positive or negative
+
+```{r}
+df=cmnts%>%
+  select(comment_text,likes)
+
+for (i in c(1 : 1000))
+{
+  if(df[i,2]>1){
+    df[i,2]=1
+  }
+}
+df=df[1:1000,]
+#write.csv(df,"cmnts.csv")
+```
+
+#### Reading tsv file
+
+```{r}
+
+dataset_original = read.delim('cmnts.tsv', quote = '', stringsAsFactors = FALSE)
+head(dataset_original)
+
+```
+
+### Cleaning the text data(tsv file)
+
+```{r}
+library(tm)
+library(SnowballC)
+corpus = VCorpus(VectorSource(dataset_original$comment_text))
+corpus = tm_map(corpus, content_transformer(tolower))
+corpus = tm_map(corpus, removeNumbers)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, stopwords())
+corpus = tm_map(corpus, stemDocument)
+corpus = tm_map(corpus, stripWhitespace)
+```
+
+
+### Creating bag of words
+
+```{r}
+dtm = DocumentTermMatrix(corpus)
+dtm = removeSparseTerms(dtm, 0.999)
+dataset = as.data.frame(as.matrix(dtm))
+dataset$likes = dataset_original$likes
+dataset$likes = factor(dataset$likes, levels = c(0, 1))
+
+dataset[1:5,20:25]
+```
+
+
+### Splitting the dataset into the Training set and Test set
+
+```{r}
+
+library(caTools)
+set.seed(123)
+
+split = sample.split(dataset$likes, SplitRatio = 0.8)
+training_set = subset(dataset, split == TRUE)
+test_set = subset(dataset, split == FALSE)
+```
+
+
+### Fitting Random Forest Classification to the Training set
+
+```{r}
+library(randomForest)
+classifier = randomForest(x = training_set[-692],
+                          y = training_set$likes,
+                          ntree = 10)
+
+y_pred = predict(classifier, newdata = test_set[-692])
+
+cm = table(test_set[, 692], y_pred)
+cm
+```
+
+
+#### Above is a confusion matrix for the model and we can see the accuracy is good enough to predict whether the comment is positive or negative.
+
